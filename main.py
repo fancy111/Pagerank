@@ -1,12 +1,14 @@
+# python 2.7
+
 import numpy as np
 import pickle
 import math
 import os
 
-fileIn = 'data/demo'
-fileOut = 'data/demoSorted'
+fileIn = 'data/WikiData.txt'                # data set
+fileOut = 'data/WikiDataSorted.txt'         # e.g. map [1, 3, 4, 5] to [0, 1, 2, 3] --> save to map & mapRev
 
-def getNodes():
+def getNodes():                 # print Nodes amount, return Nodes index List --> [1, 3, 4, 5]
     fin = open(fileIn, 'r')
     nodes = []
     for line in fin:
@@ -22,7 +24,7 @@ def getNodes():
     print 'Nodes number:', len(nodes)
     return nodes
 
-def mapNodes(nodes):
+def mapNodes(nodes):            # map [1, 3, 4, 5] to [0, 1, 2, 3] --> save to map & mapRev
     nodesNum = len(nodes)
     src = nodes
     tar = [i for i in range(nodesNum)]
@@ -32,7 +34,7 @@ def mapNodes(nodes):
     pickle.dump(res, open('map', 'w'))
     pickle.dump(resRev, open('mapRev', 'w'))
 
-def sortData():
+def sortData():                # sort by source node index
     mMap = pickle.load(open('map', 'r'))
     fin = open(fileIn, 'r')
     edges = []
@@ -132,6 +134,8 @@ def updateStep(nodesNum, beta, isFirstTime):
         r = pickle.load(open('rold/rold', 'r'))
         rn = np.array([(1.0 - beta) / nodesNum for _ in range(nodesNum)])
         for i in range(nodesNum):
+            if not os.path.exists('sparse/sparse_%d' % i):
+                continue
             line = pickle.load(open('sparse/sparse_%d' % i, 'r'))
             di = line[0]
             destList = [nodes for nodes in line[1:]]
@@ -163,7 +167,6 @@ def getBlockStripeMatrix(nodesNum, basketSize):
             for i in range(basket):
                 if len(tmp[i]) > 1:
                     pickle.dump(tmp[i], open('strip/strip_%d_%d' % (srcOld, i), 'w'))
-                    print tmp[i]
             srcOld = src
             outNodes = []
             outNodes.append(tar)
@@ -173,7 +176,6 @@ def getBlockStripeMatrix(nodesNum, basketSize):
     for i in range(basket):
         if len(tmp[i]) > 1:
             pickle.dump(tmp[i], open('strip/strip_%d_%d' % (srcOld, i), 'w'))
-            print tmp[i]
     fin.close()
 
 def blockStripeUpdate(nodesNum, basketSize, beta, isFirstTime):
@@ -199,13 +201,17 @@ def blockStripeUpdate(nodesNum, basketSize, beta, isFirstTime):
                 di = line[0]
                 destList = [nodes for nodes in line[1:]]
                 for k in destList:
-                    dest = k % basketSize
-                    rn[dest] += beta * r[src % basketSize] / di
+                    rn[k % basketSize ] += beta * r[src % basketSize] / di
             f = open('rold/rnew_%d' % i, 'w')
             pickle.dump(rn, f)
             f.close()
 
-            e += np.linalg.norm((rn - r), ord=1)
+            e += np.linalg.norm((rn - r), ord=1)        # L1 norm
+
+        for i in range(basket):
+            rn = pickle.load(open('rold/rnew_%d' % i, 'r'))
+            pickle.dump(rn, open('rold/rold_%d' % i, 'w'))
+
         if e < 1e-6:
             # print result
             x = []
@@ -214,29 +220,30 @@ def blockStripeUpdate(nodesNum, basketSize, beta, isFirstTime):
                 for i in r:
                     x.append(i)
                     x = x[:nodesNum]
-            print x
-            return
-
-        for i in range(basket):
-            rn = pickle.load(open('rold/rnew_%d' % i, 'r'))
-            pickle.dump(rn, open('rold/rold_%d' % i, 'w'))
+            return x
 
 if __name__ == '__main__':
     nodes = getNodes()
     nodesNum = len(nodes)
-    #
-    # mapNodes(nodes)
-    #
-    # sortData()
-    #
-    A = getMatrix(nodesNum, 0.85)
-    print basic(nodesNum, A)
 
-    # getSparseMatrix()
+    mapNodes(nodes)
 
-    print updateStep(nodesNum, 0.85, True)
+    sortData()
 
-    basketSize = 2
+    top = 10
+    beta = 0.85  # 0.8 ~ 0.9
+
+    A = getMatrix(nodesNum, beta)
+    res = basic(nodesNum, A)
+    print sorted(range(len(res)), key=lambda i: res[i], reverse=True)[:top]
+
+    getSparseMatrix()
+    res = updateStep(nodesNum, beta, True)
+    print sorted(range(len(res)), key=lambda i: res[i], reverse=True)[:top]
+
+
+    basketSize = 700
     getBlockStripeMatrix(nodesNum, basketSize)
-    blockStripeUpdate(nodesNum, basketSize, 0.85, True)
+    res = blockStripeUpdate(nodesNum, basketSize, beta, True)
+    print sorted(range(len(res)), key=lambda i: res[i], reverse=True)[:top]
 
